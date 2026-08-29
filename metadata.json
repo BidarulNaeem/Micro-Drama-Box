@@ -1,0 +1,6 @@
+{
+  "name": "Vela - Short Drama Streaming",
+  "description": "Production-ready Telegram Mini App for vertical short-drama video streaming with seamless swipe feed, auto-episode progression, and modular Cloudflare R2 architecture.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

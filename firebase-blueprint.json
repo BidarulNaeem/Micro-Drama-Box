@@ -1,0 +1,65 @@
+{
+  "entities": {
+    "Drama": {
+      "title": "Drama",
+      "description": "Short-form vertical drama series",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "poster": { "type": "string" },
+        "backdrop": { "type": "string" },
+        "genres": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "totalEpisodes": { "type": "number" },
+        "status": { "type": "string", "enum": ["ongoing", "completed"] },
+        "featured": { "type": "boolean" },
+        "trending": { "type": "boolean" },
+        "popularRank": { "type": "number" },
+        "viewsCount": { "type": "number" },
+        "rating": { "type": "number" },
+        "releaseYear": { "type": "number" },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "title", "poster", "genres"]
+    },
+    "Episode": {
+      "title": "Episode",
+      "description": "Individual short drama episode with vertical video stream URL",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "dramaId": { "type": "string" },
+        "episodeNumber": { "type": "number" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "duration": { "type": "number" },
+        "thumbnail": { "type": "string" },
+        "videoSource": { "type": "string" },
+        "videoType": { "type": "string", "enum": ["mp4", "hls"] },
+        "freeToWatch": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "dramaId", "episodeNumber", "videoSource"]
+    }
+  },
+  "firestore": {
+    "/dramas/{dramaId}": {
+      "schema": "Drama",
+      "description": "Collection of short drama series"
+    },
+    "/dramas/{dramaId}/episodes/{episodeId}": {
+      "schema": "Episode",
+      "description": "Subcollection of episodes belonging to a drama"
+    }
+  }
+}
