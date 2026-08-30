@@ -21,9 +21,15 @@ import { ProfileView } from './components/profile/ProfileView';
 import { AdminPanel } from './components/admin/AdminPanel';
 import { AdminPinModal } from './components/admin/AdminPinModal';
 import { adminAuthService } from './services/adminAuthService';
+import { adService } from './services/adService';
 
 export default function App() {
   const { isTelegram, user, triggerHaptic, registerBackButton } = useTelegram();
+
+  // Initialize Monetag In-App Interstitial on App Load
+  useEffect(() => {
+    adService.initInAppInterstitial();
+  }, []);
 
   // Admin PIN Protection & Route State
   const [isAdminPinModalOpen, setIsAdminPinModalOpen] = useState(false);

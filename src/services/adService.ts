@@ -1,5 +1,12 @@
 import { AdConfig, AdTriggerEvent } from '../types';
 
+// Global Window interface extension for Monetag SDK
+declare global {
+  interface Window {
+    show_11683116?: ((options?: any) => Promise<any> | void) & ((format?: string) => Promise<any>);
+  }
+}
+
 export interface AdResult {
   shown: boolean;
   skipped: boolean;
@@ -15,17 +22,18 @@ export interface IAdService {
   incrementWatchCounter(dramaId: string, episodeNumber: number): number;
   shouldTriggerAd(episodeNumber: number): boolean;
   resetCounter(): void;
-  /**
-   * Primary entry point for playing an interstitial/rewarded ad before next episode.
-   * In Phase 1: Resolves cleanly via placeholder/adapter interface.
-   * In Phase 2: Connects to Monetag SDK (e.g., showMonetagInterstitial or Monetag MiniApp Tag).
-   */
+  initInAppInterstitial(): void;
+  triggerMonetagInApp(): void;
+  showRewardedInterstitial(): Promise<{ success: boolean; error?: any }>;
+  showRewardedPopup(): Promise<{ success: boolean; error?: any }>;
   requestInterstitialAd(event: AdTriggerEvent): Promise<AdResult>;
   onAdTriggerListener(listener: (event: AdTriggerEvent) => void): () => void;
 }
 
+export const AD_EPISODE_INTERVAL = 2; // Shows an ad every 2 episodes
+
 const DEFAULT_CONFIG: AdConfig = {
-  adEpisodeInterval: 3, // Shows an ad every 3 episodes
+  adEpisodeInterval: AD_EPISODE_INTERVAL,
   enabled: true,
 };
 
@@ -36,6 +44,7 @@ class AdService implements IAdService {
   private config: AdConfig;
   private watchedSinceLastAd: number = 0;
   private listeners: Set<(event: AdTriggerEvent) => void> = new Set();
+  private isInAppInitialized: boolean = false;
 
   constructor() {
     this.config = this.loadConfig();
@@ -97,6 +106,103 @@ class AdService implements IAdService {
     this.persistCounter();
   }
 
+  /**
+   * Initializes the Monetag In-App Interstitial format with optimal frequency & capping
+   */
+  public initInAppInterstitial(): void {
+    if (this.isInAppInitialized) return;
+    if (typeof window !== 'undefined' && typeof (window as any).show_11683116 === 'function') {
+      try {
+        (window as any).show_11683116({
+          type: 'inApp',
+          inAppSettings: {
+            frequency: 2,
+            capping: 0.1,
+            interval: 30,
+            timeout: 5,
+            everyPage: false,
+          },
+        });
+        this.isInAppInitialized = true;
+        console.info('[AdService] Monetag In-App Interstitial initialized (Zone 11683116).');
+      } catch (err) {
+        console.warn('[AdService] Monetag In-App initialization notice:', err);
+      }
+    }
+  }
+
+  /**
+   * Triggers the Monetag In-App Interstitial format directly
+   */
+  public triggerMonetagInApp(): void {
+    if (typeof window !== 'undefined' && typeof (window as any).show_11683116 === 'function') {
+      try {
+        (window as any).show_11683116({
+          type: 'inApp',
+          inAppSettings: {
+            frequency: 2,
+            capping: 0.1,
+            interval: 30,
+            timeout: 5,
+            everyPage: false,
+          },
+        });
+      } catch (err) {
+        console.warn('[AdService] Error triggering Monetag In-App ad:', err);
+      }
+    }
+  }
+
+  /**
+   * Trigger Rewarded Interstitial ad (e.g. for unlocking premium episodes or bonus rewards)
+   */
+  public async showRewardedInterstitial(): Promise<{ success: boolean; error?: any }> {
+    if (typeof window !== 'undefined' && typeof (window as any).show_11683116 === 'function') {
+      try {
+        const result = (window as any).show_11683116();
+        if (result && typeof result.then === 'function') {
+          await result;
+        }
+        return { success: true };
+      } catch (e: any) {
+        console.error('[AdService] Monetag Rewarded Interstitial error:', e);
+        return { success: false, error: e };
+      }
+    }
+    // Fallback in dev/offline mode
+    return { success: true };
+  }
+
+  /**
+   * Trigger Rewarded Popup ad (e.g. for bonus rewards or instant unlock)
+   */
+  public async showRewardedPopup(): Promise<{ success: boolean; error?: any }> {
+    if (typeof window !== 'undefined' && typeof (window as any).show_11683116 === 'function') {
+      return new Promise((resolve) => {
+        try {
+          const promise = (window as any).show_11683116('pop');
+          if (promise && typeof promise.then === 'function') {
+            promise
+              .then(() => resolve({ success: true }))
+              .catch((e: any) => {
+                console.error('[AdService] Monetag Rewarded Popup error:', e);
+                resolve({ success: false, error: e });
+              });
+          } else {
+            resolve({ success: true });
+          }
+        } catch (e: any) {
+          console.error('[AdService] Monetag Rewarded Popup exception:', e);
+          resolve({ success: false, error: e });
+        }
+      });
+    }
+    return { success: true };
+  }
+
+  /**
+   * Increments the persistent watch counter and triggers ad if threshold is reached
+   */
   public incrementWatchCounter(dramaId: string, episodeNumber: number): number {
     this.watchedSinceLastAd += 1;
     this.persistCounter();
@@ -107,6 +213,11 @@ class AdService implements IAdService {
         episodeNumber,
         totalWatchedSinceLastAd: this.watchedSinceLastAd,
       };
+
+      // Trigger Monetag In-App Interstitial
+      this.triggerMonetagInApp();
+
+      // Notify registered app listeners
       this.notifyListeners(event);
     }
 
@@ -117,13 +228,12 @@ class AdService implements IAdService {
     if (!this.config.enabled || this.config.adEpisodeInterval <= 0) {
       return false;
     }
-    // Triggers when watch counter reaches the interval (e.g. after episode 3, 6, 9...)
+    // Triggers when watch counter reaches the interval (e.g. after episode 2, 4, 6...)
     return this.watchedSinceLastAd >= this.config.adEpisodeInterval;
   }
 
   /**
-   * Modular Ad Request Handler
-   * Designed for direct Monetag WebApp Tag / SDK insertion in Phase 2
+   * Modular Ad Request Handler for custom interstitial transition overlays
    */
   public async requestInterstitialAd(event: AdTriggerEvent): Promise<AdResult> {
     if (!this.config.enabled) {
@@ -135,11 +245,10 @@ class AdService implements IAdService {
     // Reset the internal counter upon ad trigger
     this.resetCounter();
 
-    // In Phase 2:
-    // await window.Monetag?.showInterstitial({ ... });
-    // For Phase 1, we simulate an asynchronous non-blocking resolution:
+    // Trigger Monetag In-App Interstitial
+    this.triggerMonetagInApp();
+
     return new Promise((resolve) => {
-      // Clean short pause simulating ad verification / callback lifecycle
       setTimeout(() => {
         resolve({
           shown: true,

@@ -72,7 +72,7 @@ export const AdPlaceholderOverlay: React.FC<AdPlaceholderOverlayProps> = ({
                 Monetag Ad Break
               </h3>
               <p className="text-xs text-white/60 leading-relaxed">
-                Ad interval triggered (Every 3 Episodes). Monetag Mini App SDK integration point configured.
+                Ad interval triggered (Every 2 Episodes). Monetag Mini App SDK integration active.
               </p>
             </div>
             <div className="w-48 h-1 bg-white/10 rounded-full overflow-hidden">

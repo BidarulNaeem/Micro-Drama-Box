@@ -183,7 +183,7 @@ class AdminAuthService {
   }
 
   /**
-   * Reset PIN to default (1234)
+   * Reset PIN to default (76523888)
    */
   public resetToDefaultPin(): void {
     if (typeof window !== 'undefined') {

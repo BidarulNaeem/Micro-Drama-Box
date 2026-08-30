@@ -95,6 +95,9 @@ export const VerticalEpisodeFeed: React.FC<VerticalEpisodeFeedProps> = ({
   const handleSelectEpisode = (epNumber: number) => {
     const idx = episodes.findIndex((e) => e.episodeNumber === epNumber);
     if (idx >= 0) {
+      if (idx !== currentIndex) {
+        adService.incrementWatchCounter(drama.id, epNumber);
+      }
       setIsSeriesCompleted(false);
       setCurrentIndex(idx);
       scrollToIndex(idx, true);
@@ -132,6 +135,10 @@ export const VerticalEpisodeFeed: React.FC<VerticalEpisodeFeedProps> = ({
                 setIsSeriesCompleted(false);
                 setCurrentIndex((prev) => {
                   if (prev !== index) {
+                    const nextEp = episodes[index];
+                    if (nextEp) {
+                      adService.incrementWatchCounter(drama.id, nextEp.episodeNumber);
+                    }
                     onHaptic('selection' as any);
                     return index;
                   }

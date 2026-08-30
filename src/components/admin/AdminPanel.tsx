@@ -164,9 +164,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToApp, onHaptic })
   };
 
   const handleResetDefaultPin = () => {
-    if (window.confirm('Reset Master PIN back to default (1234)?')) {
+    if (window.confirm('Reset Master PIN back to default (76523888)?')) {
       adminAuthService.resetToDefaultPin();
-      showFeedback('success', 'Master PIN reset to default: 1234');
+      showFeedback('success', 'Master PIN reset to default: 76523888');
     }
   };
 
@@ -896,7 +896,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToApp, onHaptic })
                       onClick={handleResetDefaultPin}
                       className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 active:scale-95 text-white/50 hover:text-white text-xs font-semibold"
                     >
-                      Reset Default (1234)
+                      Reset Default (76523888)
                     </button>
                   </div>
                 </div>
