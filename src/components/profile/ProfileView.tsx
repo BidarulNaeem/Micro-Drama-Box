@@ -14,6 +14,10 @@ import {
   ArrowRight,
   Lock,
   KeyRound,
+  Coins,
+  Gift,
+  Loader2,
+  CheckCircle2,
 } from 'lucide-react';
 import { TelegramUser, UserPreferences } from '../../types';
 import { userProgressRepository } from '../../repositories/userProgressRepository';
@@ -46,6 +50,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     completedCount: 0,
   });
 
+  const [coins, setCoins] = useState<number>(() => adService.getUserCoins());
+  const [isClaimingBonus, setIsClaimingBonus] = useState(false);
+  const [bonusRewardSuccess, setBonusRewardSuccess] = useState<number | null>(null);
+
   const [adInterval, setAdInterval] = useState(adService.getConfig().adEpisodeInterval);
   const [r2Url, setR2Url] = useState(videoService.getCloudflareR2BaseUrl());
 
@@ -61,7 +69,37 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         completedCount: history.filter((h) => h.completed).length,
       });
     });
+
+    const unsubscribeCoins = adService.onCoinsListener((newCoins) => {
+      setCoins(newCoins);
+    });
+
+    return () => unsubscribeCoins();
   }, []);
+
+  const handleClaimReward = async () => {
+    if (isClaimingBonus) return;
+    setIsClaimingBonus(true);
+    onHaptic('medium');
+
+    try {
+      // Trigger Rewarded Popup Ad via Monetag
+      const res = await adService.claimDailyBonusWithPopup(50);
+      if (res.success) {
+        onHaptic('success');
+        setBonusRewardSuccess(res.coinsAwarded);
+        setTimeout(() => {
+          setBonusRewardSuccess(null);
+        }, 4000);
+      } else {
+        onHaptic('heavy');
+      }
+    } catch (e) {
+      console.error('[ProfileView] Claim bonus error:', e);
+    } finally {
+      setIsClaimingBonus(false);
+    }
+  };
 
   const handleTogglePref = async (key: keyof UserPreferences) => {
     const updated = { ...preferences, [key]: !preferences[key] };
@@ -128,6 +166,62 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Rewarded Popup Bonus & Coins Card */}
+      <div className="p-5 rounded-3xl bg-gradient-to-br from-amber-950/40 via-[#1c1822] to-[#12141c] border border-amber-500/30 relative overflow-hidden shadow-xl shadow-amber-950/20">
+        <div className="flex items-center justify-between mb-3.5">
+          <div className="flex items-center space-x-2.5">
+            <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
+              <Coins className="w-5 h-5 text-amber-400" />
+            </div>
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-wider text-amber-300/80">
+                Your VIP Balance
+              </p>
+              <h4 className="text-xl font-black text-white font-display flex items-center space-x-1.5">
+                <span>{coins}</span>
+                <span className="text-xs font-bold text-amber-400">Coins</span>
+              </h4>
+            </div>
+          </div>
+
+          <div className="px-2.5 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-bold flex items-center space-x-1">
+            <Gift className="w-3.5 h-3.5" />
+            <span>Daily Bonus</span>
+          </div>
+        </div>
+
+        {bonusRewardSuccess !== null ? (
+          <div className="p-3 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center space-x-2.5 text-emerald-300 text-xs font-bold animate-in fade-in slide-in-from-top-1">
+            <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+            <span>Successfully claimed +{bonusRewardSuccess} Coins from sponsored reward!</span>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-xs text-white/70 leading-relaxed">
+              Watch a quick sponsored ad popup to instantly claim 50 VIP Coins for unlocking premium episodes!
+            </p>
+            <button
+              id="profile-claim-reward-btn"
+              onClick={handleClaimReward}
+              disabled={isClaimingBonus}
+              className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-amber-500 via-amber-600 to-rose-600 hover:from-amber-400 hover:to-rose-500 active:scale-95 text-white font-black text-xs flex items-center justify-center space-x-2 shadow-lg shadow-amber-500/25 transition-all cursor-pointer border border-amber-400/30"
+            >
+              {isClaimingBonus ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-white" />
+                  <span>Loading Sponsored Reward...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4 text-amber-200 fill-amber-200" />
+                  <span>CLAIM DAILY REWARD (+50 COINS)</span>
+                </>
+              )}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Admin Panel Access Card with PIN Verification */}
@@ -239,7 +333,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         <div className="flex items-center space-x-2 border-b border-white/5 pb-2.5">
           <Shield className="w-4 h-4 text-emerald-400" />
           <h4 className="font-bold text-xs uppercase tracking-wider text-white/80">
-            Cloudflare R2 & Firestore Architecture
+            Monetag Monetization & Architecture
           </h4>
         </div>
 
@@ -269,9 +363,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
         {/* Cloudflare R2 / HLS Stream note */}
         <div className="pt-2 border-t border-white/5 space-y-1 text-white/60 text-[11px]">
-          <p className="font-semibold text-white/80">Cloudflare R2 & Live Firestore:</p>
+          <p className="font-semibold text-white/80">Monetag SDK & Cloudflare R2:</p>
           <p className="leading-relaxed">
-            Connected to Firestore <code className="text-rose-400 font-mono">vela-drama-8f277</code> with real-time listeners.
+            Zone <code className="text-amber-400 font-mono">11683116</code> active with In-App Interstitial, Rewarded Interstitial, and Rewarded Popup format bindings.
           </p>
         </div>
       </div>

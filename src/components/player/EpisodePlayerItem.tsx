@@ -14,9 +14,14 @@ import {
   Settings2,
   RotateCcw,
   AlertCircle,
+  Lock,
+  Sparkles,
+  Loader2,
+  Film,
 } from 'lucide-react';
 import { Drama, Episode } from '../../types';
 import { videoService } from '../../services/videoService';
+import { adService } from '../../services/adService';
 
 interface EpisodePlayerItemProps {
   episode: Episode;
@@ -33,7 +38,7 @@ interface EpisodePlayerItemProps {
   onOpenSettingsModal: () => void;
   onEpisodeEnded: (episode: Episode) => void;
   onProgressUpdate: (episode: Episode, currentTime: number, duration: number) => void;
-  onHaptic: (type?: 'light' | 'medium' | 'heavy' | 'success') => void;
+  onHaptic: (type?: 'light' | 'medium' | 'heavy' | 'selection' | 'success') => void;
 }
 
 export const EpisodePlayerItem: React.FC<EpisodePlayerItemProps> = ({
@@ -58,6 +63,11 @@ export const EpisodePlayerItem: React.FC<EpisodePlayerItemProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const endedFiredRef = useRef<boolean>(false);
 
+  const [isUnlocked, setIsUnlocked] = useState<boolean>(() =>
+    adService.isEpisodeUnlocked(drama.id, episode.episodeNumber, episode.freeToWatch)
+  );
+  const [isUnlockingWithAd, setIsUnlockingWithAd] = useState(false);
+
   const [isPlaying, setIsPlaying] = useState(false);
   const [isBuffering, setIsBuffering] = useState(true);
   const [hasError, setHasError] = useState(false);
@@ -69,6 +79,40 @@ export const EpisodePlayerItem: React.FC<EpisodePlayerItemProps> = ({
   const [likesCount, setLikesCount] = useState(1420 + episode.episodeNumber * 83);
   const [floatingHearts, setFloatingHearts] = useState<{ id: number; x: number; y: number }[]>([]);
   const [isSeeking, setIsSeeking] = useState(false);
+
+  // Sync unlock status with AdService
+  useEffect(() => {
+    setIsUnlocked(adService.isEpisodeUnlocked(drama.id, episode.episodeNumber, episode.freeToWatch));
+    const unsubscribe = adService.onUnlockListener((unlockedDramaId, unlockedEp) => {
+      if (unlockedDramaId === drama.id && unlockedEp === episode.episodeNumber) {
+        setIsUnlocked(true);
+      }
+    });
+    return () => unsubscribe();
+  }, [drama.id, episode.episodeNumber, episode.freeToWatch]);
+
+  const handleWatchAdToUnlock = async () => {
+    if (isUnlockingWithAd) return;
+    setIsUnlockingWithAd(true);
+    onHaptic('medium');
+
+    try {
+      const res = await adService.unlockEpisodeWithRewardedAd(drama.id, episode.episodeNumber);
+      if (res.success) {
+        setIsUnlocked(true);
+        onHaptic('success');
+        if (videoRef.current && isActive) {
+          videoRef.current.play().catch(() => {});
+        }
+      } else {
+        onHaptic('heavy');
+      }
+    } catch (err) {
+      console.error('[EpisodePlayerItem] Failed to unlock via Rewarded Interstitial:', err);
+    } finally {
+      setIsUnlockingWithAd(false);
+    }
+  };
 
   // Initialize Video Stream Source
   useEffect(() => {
@@ -147,7 +191,7 @@ export const EpisodePlayerItem: React.FC<EpisodePlayerItemProps> = ({
     const video = videoRef.current;
     if (!video) return;
 
-    if (isActive) {
+    if (isActive && isUnlocked) {
       endedFiredRef.current = false;
       video.playbackRate = playbackSpeed;
       video.muted = isMuted;
@@ -195,7 +239,7 @@ export const EpisodePlayerItem: React.FC<EpisodePlayerItemProps> = ({
         setCurrentTime(0);
       }
     }
-  }, [isActive, playbackSpeed, isMuted, episode.id]);
+  }, [isActive, isUnlocked, playbackSpeed, isMuted, episode.id]);
 
   // Dynamically update audio mute & speed
   useEffect(() => {
@@ -427,7 +471,7 @@ export const EpisodePlayerItem: React.FC<EpisodePlayerItemProps> = ({
       ))}
 
       {/* Sleek Buffering & Loading Spinner */}
-      {isBuffering && !hasError && (
+      {isBuffering && !hasError && isUnlocked && (
         <div className="absolute inset-0 z-20 pointer-events-none flex flex-col items-center justify-center bg-black/35 backdrop-blur-[2px]">
           <div className="relative flex items-center justify-center">
             <div className="w-12 h-12 rounded-full border-3 border-white/15 border-t-rose-500 border-r-rose-500/60 animate-spin" />
@@ -436,6 +480,62 @@ export const EpisodePlayerItem: React.FC<EpisodePlayerItemProps> = ({
           <p className="mt-3 text-xs font-semibold text-white/90 tracking-wide drop-shadow">
             Loading Episode {episode.episodeNumber}...
           </p>
+        </div>
+      )}
+
+      {/* Locked Episode Overlay - Rewarded Interstitial Prompt */}
+      {!isUnlocked && (
+        <div className="absolute inset-0 z-35 flex flex-col items-center justify-center p-6 bg-black/85 backdrop-blur-md text-center">
+          <div className="relative mb-4">
+            <div className="w-20 h-20 rounded-3xl bg-gradient-to-tr from-amber-600/30 to-rose-600/30 border border-amber-500/40 flex items-center justify-center text-amber-400 shadow-2xl shadow-amber-500/20">
+              <Lock className="w-9 h-9 text-amber-400" />
+            </div>
+            <div className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-rose-500 flex items-center justify-center border-2 border-[#12141a]">
+              <Sparkles className="w-3 h-3 text-white fill-white" />
+            </div>
+          </div>
+
+          <span className="px-3 py-1 rounded-full text-xs font-extrabold uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/40 mb-2">
+            Premium Episode {episode.episodeNumber}
+          </span>
+
+          <h3 className="text-xl font-black text-white font-display tracking-tight mb-1.5">
+            {episode.title}
+          </h3>
+
+          <p className="text-xs text-white/70 max-w-xs leading-relaxed mb-6">
+            Watch a short sponsored ad to instantly unlock this episode in HD and continue streaming!
+          </p>
+
+          <div className="w-full max-w-xs space-y-3">
+            <button
+              id={`player-unlock-btn-ep-${episode.episodeNumber}`}
+              onClick={handleWatchAdToUnlock}
+              disabled={isUnlockingWithAd}
+              className="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-amber-500 via-rose-600 to-rose-500 hover:from-amber-400 hover:to-rose-400 active:scale-95 text-white font-black text-sm flex items-center justify-center space-x-2 shadow-2xl shadow-rose-600/40 transition-all cursor-pointer border border-white/20"
+            >
+              {isUnlockingWithAd ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-white" />
+                  <span>Loading Rewarded Ad...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4 text-amber-200 fill-amber-200" />
+                  <span>WATCH AD TO UNLOCK</span>
+                </>
+              )}
+            </button>
+
+            <button
+              id={`player-open-drawer-btn-ep-${episode.episodeNumber}`}
+              onClick={onOpenEpisodesDrawer}
+              className="w-full py-2.5 px-4 rounded-xl bg-white/10 hover:bg-white/15 active:scale-95 text-white/80 font-bold text-xs flex items-center justify-center space-x-2 border border-white/10 transition-all"
+            >
+              <ListVideo className="w-3.5 h-3.5" />
+              <span>Select Different Episode</span>
+            </button>
+          </div>
         </div>
       )}
 

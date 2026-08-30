@@ -1,6 +1,7 @@
-import React from 'react';
-import { Search, Bell, Sparkles, Flame, Sliders } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Search, Bell, Sparkles, Flame, Coins } from 'lucide-react';
 import { TelegramUser } from '../../types';
+import { adService } from '../../services/adService';
 
 interface HeaderProps {
   onOpenSearch: () => void;
@@ -17,6 +18,15 @@ export const Header: React.FC<HeaderProps> = ({
   user,
   unreadCount = 2,
 }) => {
+  const [coins, setCoins] = useState<number>(() => adService.getUserCoins());
+
+  useEffect(() => {
+    const unsub = adService.onCoinsListener((newCoins) => {
+      setCoins(newCoins);
+    });
+    return () => unsub();
+  }, []);
+
   return (
     <header className="sticky top-0 z-20 bg-[#08090c]/90 backdrop-blur-xl border-b border-white/[0.06] px-4 pt-safe pb-3">
       <div className="w-full max-w-lg mx-auto flex items-center justify-between">
@@ -37,8 +47,19 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* Action Buttons: Notifications, Search & User Avatar */}
+        {/* Action Buttons: Coins, Notifications, Search & User Avatar */}
         <div className="flex items-center space-x-2">
+          {/* Coin Balance Quick Button */}
+          <button
+            id="header-coins-btn"
+            onClick={onOpenProfile}
+            className="px-2.5 py-1.5 rounded-full bg-amber-500/15 hover:bg-amber-500/25 active:scale-95 border border-amber-500/30 flex items-center space-x-1.5 text-amber-300 transition-all cursor-pointer"
+            aria-label="Coins Balance"
+          >
+            <Coins className="w-3.5 h-3.5 text-amber-400" />
+            <span className="text-xs font-black font-display">{coins}</span>
+          </button>
+
           {/* Notification Button */}
           <button
             id="header-notification-btn"

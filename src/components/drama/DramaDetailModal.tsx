@@ -13,10 +13,12 @@ import {
   Layers,
   Sparkles,
   Flame,
+  Lock,
 } from 'lucide-react';
 import { Drama, Episode, UserProgress } from '../../types';
 import { userProgressRepository } from '../../repositories/userProgressRepository';
 import { dramaRepository } from '../../repositories/dramaRepository';
+import { adService } from '../../services/adService';
 import { DramaCover } from '../common/DramaCover';
 
 interface DramaDetailModalProps {
@@ -262,6 +264,7 @@ export const DramaDetailModal: React.FC<DramaDetailModalProps> = ({
                     {episodes.map((ep) => {
                       const isWatched = progress && progress.episodeNumber >= ep.episodeNumber;
                       const isCurrent = progress && progress.episodeNumber === ep.episodeNumber;
+                      const isUnlocked = adService.isEpisodeUnlocked(drama.id, ep.episodeNumber, ep.freeToWatch);
 
                       return (
                         <div
@@ -273,7 +276,9 @@ export const DramaDetailModal: React.FC<DramaDetailModalProps> = ({
                           className={`p-3 rounded-2xl border flex items-center justify-between cursor-pointer transition-all active:scale-[0.98] ${
                             isCurrent
                               ? 'bg-rose-500/15 border-rose-500/40 text-white'
-                              : 'bg-white/5 border-white/5 hover:bg-white/10 text-white/80'
+                              : isUnlocked
+                              ? 'bg-white/5 border-white/5 hover:bg-white/10 text-white/80'
+                              : 'bg-amber-950/20 border-amber-500/20 text-white/80'
                           }`}
                         >
                           <div className="flex items-center space-x-3 min-w-0">
@@ -282,13 +287,15 @@ export const DramaDetailModal: React.FC<DramaDetailModalProps> = ({
                                 src={ep.thumbnailUrl || ep.thumbnail || drama.coverImage || drama.poster}
                                 alt={ep.title}
                                 referrerPolicy="no-referrer"
-                                className="w-full h-full object-cover"
+                                className={`w-full h-full object-cover ${!isUnlocked ? 'filter grayscale/40 brightness-75' : ''}`}
                               />
                               <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
                                 {isCurrent ? (
                                   <div className="w-5 h-5 rounded-full bg-rose-600 flex items-center justify-center shadow-md">
                                     <Play className="w-2.5 h-2.5 fill-white text-white translate-x-0.5" />
                                   </div>
+                                ) : !isUnlocked ? (
+                                  <Lock className="w-4 h-4 text-amber-400" />
                                 ) : isWatched ? (
                                   <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                                 ) : (
@@ -299,9 +306,16 @@ export const DramaDetailModal: React.FC<DramaDetailModalProps> = ({
                               </div>
                             </div>
                             <div className="min-w-0 pr-2">
-                              <p className={`text-xs font-bold truncate ${isCurrent ? 'text-rose-400' : 'text-white'}`}>
-                                {ep.title}
-                              </p>
+                              <div className="flex items-center space-x-1.5">
+                                <p className={`text-xs font-bold truncate ${isCurrent ? 'text-rose-400' : 'text-white'}`}>
+                                  {ep.title}
+                                </p>
+                                {!isUnlocked && (
+                                  <span className="px-1.5 py-0.2 rounded text-[8px] font-extrabold bg-amber-500/20 text-amber-300 border border-amber-500/30 uppercase">
+                                    Locked
+                                  </span>
+                                )}
+                              </div>
                               <p className="text-[11px] text-white/40 truncate">
                                 {ep.duration ? `${Math.floor(ep.duration / 60)}m ${ep.duration % 60}s` : '1 min'} • HD
                               </p>
@@ -309,9 +323,16 @@ export const DramaDetailModal: React.FC<DramaDetailModalProps> = ({
                           </div>
 
                           <div className="shrink-0">
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-white/10 text-white/70">
-                              HD
-                            </span>
+                            {!isUnlocked ? (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center space-x-1">
+                                <Sparkles className="w-2.5 h-2.5" />
+                                <span>Ad Unlock</span>
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-white/10 text-white/70">
+                                HD
+                              </span>
+                            )}
                           </div>
                         </div>
                       );

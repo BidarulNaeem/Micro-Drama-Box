@@ -367,7 +367,9 @@ export const VerticalEpisodeFeed: React.FC<VerticalEpisodeFeedProps> = ({
         currentEpisodeNumber={currentIndex + 1}
         onSelectEpisode={handleSelectEpisode}
         dramaTitle={drama.title}
+        dramaId={drama.id}
         dramaCover={drama.coverImage || drama.poster}
+        onHaptic={onHaptic}
       />
 
       {/* Settings Modal */}

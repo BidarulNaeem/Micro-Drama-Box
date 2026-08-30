@@ -26,8 +26,17 @@ export interface IAdService {
   triggerMonetagInApp(): void;
   showRewardedInterstitial(): Promise<{ success: boolean; error?: any }>;
   showRewardedPopup(): Promise<{ success: boolean; error?: any }>;
+  unlockEpisodeWithRewardedAd(dramaId: string, episodeNumber: number): Promise<{ success: boolean; error?: any }>;
+  claimDailyBonusWithPopup(bonusAmount?: number): Promise<{ success: boolean; coinsAwarded: number; newTotal: number; error?: any }>;
+  isEpisodeUnlocked(dramaId: string, episodeNumber: number, freeToWatch?: boolean): boolean;
+  unlockEpisode(dramaId: string, episodeNumber: number): void;
+  getUnlockedEpisodes(): Record<string, number[]>;
+  getUserCoins(): number;
+  addCoins(amount: number): number;
   requestInterstitialAd(event: AdTriggerEvent): Promise<AdResult>;
   onAdTriggerListener(listener: (event: AdTriggerEvent) => void): () => void;
+  onUnlockListener(listener: (dramaId: string, episodeNumber: number) => void): () => void;
+  onCoinsListener(listener: (coins: number) => void): () => void;
 }
 
 export const AD_EPISODE_INTERVAL = 2; // Shows an ad every 2 episodes
@@ -39,11 +48,16 @@ const DEFAULT_CONFIG: AdConfig = {
 
 const STORAGE_KEY_WATCH_COUNT = 'dramapulse_ad_watch_counter';
 const STORAGE_KEY_AD_CONFIG = 'dramapulse_ad_config';
+const STORAGE_KEY_UNLOCKED_EPISODES = 'dramapulse_unlocked_episodes';
+const STORAGE_KEY_USER_COINS = 'dramapulse_user_coins';
+const DEFAULT_INITIAL_COINS = 100;
 
 class AdService implements IAdService {
   private config: AdConfig;
   private watchedSinceLastAd: number = 0;
   private listeners: Set<(event: AdTriggerEvent) => void> = new Set();
+  private unlockListeners: Set<(dramaId: string, episodeNumber: number) => void> = new Set();
+  private coinListeners: Set<(coins: number) => void> = new Set();
   private isInAppInitialized: boolean = false;
 
   constructor() {
@@ -256,6 +270,142 @@ class AdService implements IAdService {
           durationMs: 0,
         });
       }, 300);
+    });
+  }
+
+  /**
+   * Check if a specific episode is unlocked for playback.
+   * Free to watch episodes (or first 2 episodes) are always unlocked.
+   */
+  public isEpisodeUnlocked(dramaId: string, episodeNumber: number, freeToWatch?: boolean): boolean {
+    if (freeToWatch === true || episodeNumber <= 2) {
+      return true;
+    }
+    const unlocked = this.getUnlockedEpisodes();
+    const dramaUnlocked = unlocked[dramaId];
+    if (Array.isArray(dramaUnlocked) && dramaUnlocked.includes(episodeNumber)) {
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Unlock an episode permanently and notify listeners
+   */
+  public unlockEpisode(dramaId: string, episodeNumber: number): void {
+    try {
+      const unlocked = this.getUnlockedEpisodes();
+      if (!unlocked[dramaId]) {
+        unlocked[dramaId] = [];
+      }
+      if (!unlocked[dramaId].includes(episodeNumber)) {
+        unlocked[dramaId].push(episodeNumber);
+        localStorage.setItem(STORAGE_KEY_UNLOCKED_EPISODES, JSON.stringify(unlocked));
+        this.notifyUnlockListeners(dramaId, episodeNumber);
+      }
+    } catch (e) {
+      console.warn('[AdService] Failed to persist unlocked episode:', e);
+    }
+  }
+
+  /**
+   * Get all unlocked episodes mapped by drama ID
+   */
+  public getUnlockedEpisodes(): Record<string, number[]> {
+    try {
+      const val = localStorage.getItem(STORAGE_KEY_UNLOCKED_EPISODES);
+      return val ? JSON.parse(val) : {};
+    } catch {
+      return {};
+    }
+  }
+
+  /**
+   * Trigger Rewarded Interstitial ad and unlock episode on completion
+   */
+  public async unlockEpisodeWithRewardedAd(
+    dramaId: string,
+    episodeNumber: number
+  ): Promise<{ success: boolean; error?: any }> {
+    const res = await this.showRewardedInterstitial();
+    if (res.success) {
+      this.unlockEpisode(dramaId, episodeNumber);
+    }
+    return res;
+  }
+
+  /**
+   * Get current user coin balance
+   */
+  public getUserCoins(): number {
+    try {
+      const val = localStorage.getItem(STORAGE_KEY_USER_COINS);
+      return val !== null ? parseInt(val, 10) || 0 : DEFAULT_INITIAL_COINS;
+    } catch {
+      return DEFAULT_INITIAL_COINS;
+    }
+  }
+
+  /**
+   * Add coins to user balance and notify listeners
+   */
+  public addCoins(amount: number): number {
+    const current = this.getUserCoins();
+    const updated = Math.max(0, current + amount);
+    try {
+      localStorage.setItem(STORAGE_KEY_USER_COINS, updated.toString());
+      this.notifyCoinListeners(updated);
+    } catch (e) {
+      console.warn('[AdService] Failed to update coins:', e);
+    }
+    return updated;
+  }
+
+  /**
+   * Trigger Rewarded Popup ad and grant daily bonus coins
+   */
+  public async claimDailyBonusWithPopup(
+    bonusAmount: number = 50
+  ): Promise<{ success: boolean; coinsAwarded: number; newTotal: number; error?: any }> {
+    const res = await this.showRewardedPopup();
+    if (res.success) {
+      const newTotal = this.addCoins(bonusAmount);
+      return { success: true, coinsAwarded: bonusAmount, newTotal };
+    }
+    return { success: false, coinsAwarded: 0, newTotal: this.getUserCoins(), error: res.error };
+  }
+
+  public onUnlockListener(listener: (dramaId: string, episodeNumber: number) => void): () => void {
+    this.unlockListeners.add(listener);
+    return () => {
+      this.unlockListeners.delete(listener);
+    };
+  }
+
+  public onCoinsListener(listener: (coins: number) => void): () => void {
+    this.coinListeners.add(listener);
+    return () => {
+      this.coinListeners.delete(listener);
+    };
+  }
+
+  private notifyUnlockListeners(dramaId: string, episodeNumber: number) {
+    this.unlockListeners.forEach((listener) => {
+      try {
+        listener(dramaId, episodeNumber);
+      } catch (e) {
+        console.error('[AdService] Unlock listener error:', e);
+      }
+    });
+  }
+
+  private notifyCoinListeners(coins: number) {
+    this.coinListeners.forEach((listener) => {
+      try {
+        listener(coins);
+      } catch (e) {
+        console.error('[AdService] Coin listener error:', e);
+      }
     });
   }
 
