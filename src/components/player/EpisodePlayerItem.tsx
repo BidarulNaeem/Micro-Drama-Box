@@ -113,7 +113,7 @@ export const EpisodePlayerItem: React.FC<EpisodePlayerItemProps> = ({
 
     if (coins < COIN_UNLOCK_COST) {
       onHaptic('heavy');
-      showToast('Not enough coins! Watch a daily ad to claim 50 free coins.');
+      showToast('Not enough coins! You need 20 coins. Claim Daily Reward to get +50 coins.');
       return;
     }
 
@@ -127,7 +127,7 @@ export const EpisodePlayerItem: React.FC<EpisodePlayerItemProps> = ({
       }
     } else {
       onHaptic('heavy');
-      showToast(res.error || 'Not enough coins! Watch a daily ad to claim 50 free coins.');
+      showToast(res.error || 'Not enough coins! You need 20 coins. Claim Daily Reward to get +50 coins.');
     }
   };
 
@@ -565,47 +565,67 @@ export const EpisodePlayerItem: React.FC<EpisodePlayerItemProps> = ({
             {episode.title}
           </h3>
 
-          <p className="text-xs text-white/70 max-w-xs leading-relaxed mb-5">
-            Unlock this episode instantly using 20 VIP Coins or watch a short sponsored ad!
+          <p className="text-xs text-white/70 max-w-xs leading-relaxed mb-4">
+            Choose an unlock method to instantly continue watching in HD:
           </p>
 
-          <div className="w-full max-w-xs space-y-2.5">
-            {/* Option 1: Unlock with 20 Coins */}
-            <button
-              id={`player-unlock-coins-btn-ep-${episode.episodeNumber}`}
-              onClick={handleUnlockWithCoins}
-              disabled={isUnlockingWithAd}
-              className="w-full py-3.5 px-5 rounded-2xl bg-gradient-to-r from-amber-500 via-amber-600 to-amber-500 hover:from-amber-400 hover:to-amber-400 active:scale-95 text-white font-black text-xs sm:text-sm flex items-center justify-center space-x-2 shadow-xl shadow-amber-500/25 transition-all cursor-pointer border border-amber-300/40"
-            >
-              <Coins className="w-4 h-4 text-amber-200 fill-amber-200" />
-              <span>UNLOCK WITH 20 COINS</span>
-            </button>
+          <div className="w-full max-w-sm space-y-2.5">
+            {/* Dual Options Side-by-Side on wider screens or responsive stack */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {/* Option A: Watch Ad to Unlock */}
+              <button
+                id={`player-unlock-btn-ep-${episode.episodeNumber}`}
+                onClick={handleWatchAdToUnlock}
+                disabled={isUnlockingWithAd}
+                className="w-full p-3 rounded-2xl bg-gradient-to-br from-rose-600 via-rose-500 to-rose-700 hover:from-rose-500 hover:to-rose-600 active:scale-95 text-white flex flex-col items-center justify-center text-center shadow-lg shadow-rose-600/30 transition-all cursor-pointer border border-rose-400/40 relative overflow-hidden"
+              >
+                <div className="flex items-center space-x-1 mb-1">
+                  <span className="text-[10px] uppercase font-black tracking-wider bg-black/30 px-1.5 py-0.5 rounded text-rose-200">
+                    Option A
+                  </span>
+                  <span className="text-[10px] font-bold text-rose-200">Free</span>
+                </div>
+                {isUnlockingWithAd ? (
+                  <div className="flex items-center space-x-1.5 py-0.5">
+                    <Loader2 className="w-4 h-4 animate-spin text-white" />
+                    <span className="text-xs font-bold">Loading Ad...</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center space-x-1.5 py-0.5">
+                    <Sparkles className="w-4 h-4 text-rose-200 fill-rose-200 shrink-0" />
+                    <span className="text-xs font-black tracking-tight">Watch Ad to Unlock</span>
+                  </div>
+                )}
+              </button>
 
-            {/* Option 2: Watch Ad to Unlock */}
-            <button
-              id={`player-unlock-btn-ep-${episode.episodeNumber}`}
-              onClick={handleWatchAdToUnlock}
-              disabled={isUnlockingWithAd}
-              className="w-full py-3.5 px-5 rounded-2xl bg-gradient-to-r from-rose-600 via-rose-500 to-rose-600 hover:from-rose-500 hover:to-rose-400 active:scale-95 text-white font-black text-xs sm:text-sm flex items-center justify-center space-x-2 shadow-xl shadow-rose-600/30 transition-all cursor-pointer border border-rose-400/30"
-            >
-              {isUnlockingWithAd ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin text-white" />
-                  <span>Loading Rewarded Ad...</span>
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-4 h-4 text-rose-200 fill-rose-200" />
-                  <span>WATCH AD TO UNLOCK (FREE)</span>
-                </>
-              )}
-            </button>
+              {/* Option B: Unlock with 20 Coins */}
+              <button
+                id={`player-unlock-coins-btn-ep-${episode.episodeNumber}`}
+                onClick={handleUnlockWithCoins}
+                disabled={isUnlockingWithAd}
+                className="w-full p-3 rounded-2xl bg-gradient-to-br from-amber-500 via-amber-600 to-amber-700 hover:from-amber-400 hover:to-amber-500 active:scale-95 text-white flex flex-col items-center justify-center text-center shadow-lg shadow-amber-500/30 transition-all cursor-pointer border border-amber-300/40 relative overflow-hidden"
+              >
+                <div className="flex items-center space-x-1 mb-1">
+                  <span className="text-[10px] uppercase font-black tracking-wider bg-black/30 px-1.5 py-0.5 rounded text-amber-200">
+                    Option B
+                  </span>
+                  <span className="text-[10px] font-bold text-amber-200 flex items-center space-x-0.5">
+                    <span>Balance:</span>
+                    <span className="font-extrabold text-white">{coins}</span>
+                  </span>
+                </div>
+                <div className="flex items-center space-x-1.5 py-0.5">
+                  <Coins className="w-4 h-4 text-amber-200 fill-amber-200 shrink-0" />
+                  <span className="text-xs font-black tracking-tight">Unlock with 20 Coins</span>
+                </div>
+              </button>
+            </div>
 
-            {/* Option 3: Choose Different Episode */}
+            {/* Option C: Choose Different Episode */}
             <button
               id={`player-open-drawer-btn-ep-${episode.episodeNumber}`}
               onClick={onOpenEpisodesDrawer}
-              className="w-full py-2.5 px-4 rounded-xl bg-white/10 hover:bg-white/15 active:scale-95 text-white/80 font-bold text-xs flex items-center justify-center space-x-2 border border-white/10 transition-all"
+              className="w-full py-2 px-4 rounded-xl bg-white/10 hover:bg-white/15 active:scale-95 text-white/80 font-bold text-xs flex items-center justify-center space-x-2 border border-white/10 transition-all"
             >
               <ListVideo className="w-3.5 h-3.5" />
               <span>Select Different Episode</span>

@@ -51,7 +51,7 @@ export const EpisodeDrawer: React.FC<EpisodeDrawerProps> = ({
 
     if (coins < COIN_UNLOCK_COST) {
       onHaptic?.('heavy');
-      showToast('Not enough coins! Watch a daily ad to claim 50 free coins.');
+      showToast('Not enough coins! You need 20 coins. Claim Daily Reward to get +50 coins.');
       return;
     }
 
@@ -63,7 +63,7 @@ export const EpisodeDrawer: React.FC<EpisodeDrawerProps> = ({
       onClose();
     } else {
       onHaptic?.('heavy');
-      showToast(res.error || 'Not enough coins! Watch a daily ad to claim 50 free coins.');
+      showToast(res.error || 'Not enough coins! You need 20 coins. Claim Daily Reward to get +50 coins.');
     }
   };
 

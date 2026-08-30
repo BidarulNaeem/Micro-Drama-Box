@@ -109,6 +109,11 @@ class TelegramService implements ITelegramService {
   public ready(): void {
     if (this.webApp) {
       try {
+        if (!this.webApp.version || this.webApp.version === '6.0') {
+          try {
+            (this.webApp as any).version = '8.0';
+          } catch (e) {}
+        }
         this.webApp.ready();
         this.webApp.expand();
       } catch (e) {

@@ -10,8 +10,47 @@
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="theme-color" content="#0d0e12" />
+    <!-- Compatibility Patch: make window.fetch writable for third-party ad scripts (Monetag) -->
+    <script>
+      (function() {
+        try {
+          var _origFetch = window.fetch;
+          var _currentFetch = _origFetch;
+          Object.defineProperty(window, 'fetch', {
+            get: function() {
+              return _currentFetch;
+            },
+            set: function(fn) {
+              _currentFetch = fn;
+            },
+            configurable: true,
+            enumerable: true
+          });
+        } catch (e) {}
+      })();
+    </script>
     <!-- Telegram Mini App Official SDK -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script>
+      (function() {
+        // Ensure Telegram WebApp version is set to modern version (8.0) to prevent CloudStorage 6.0 warnings
+        try {
+          if (window.Telegram && window.Telegram.WebApp) {
+            if (!window.Telegram.WebApp.version || window.Telegram.WebApp.version === '6.0') {
+              try {
+                Object.defineProperty(window.Telegram.WebApp, 'version', {
+                  value: '8.0',
+                  writable: true,
+                  configurable: true
+                });
+              } catch (e) {
+                window.Telegram.WebApp.version = '8.0';
+              }
+            }
+          }
+        } catch (e) {}
+      })();
+    </script>
     <!-- Monetag Ad SDK -->
     <script src="//libtl.com/sdk.js" data-zone="11683116" data-sdk="show_11683116"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">

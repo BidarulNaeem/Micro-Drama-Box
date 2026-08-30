@@ -389,7 +389,7 @@ class AdService implements IAdService {
       return {
         success: false,
         remainingCoins: current,
-        error: 'Not enough coins! Watch a daily ad to claim 50 free coins.',
+        error: 'Not enough coins! You need 20 coins. Claim Daily Reward to get +50 coins.',
       };
     }
 
@@ -398,7 +398,7 @@ class AdService implements IAdService {
       return {
         success: false,
         remainingCoins: current,
-        error: 'Not enough coins! Watch a daily ad to claim 50 free coins.',
+        error: 'Not enough coins! You need 20 coins. Claim Daily Reward to get +50 coins.',
       };
     }
 

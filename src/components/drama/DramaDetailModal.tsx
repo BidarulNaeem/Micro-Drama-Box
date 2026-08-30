@@ -325,8 +325,8 @@ export const DramaDetailModal: React.FC<DramaDetailModalProps> = ({
                           <div className="shrink-0">
                             {!isUnlocked ? (
                               <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center space-x-1">
-                                <Sparkles className="w-2.5 h-2.5" />
-                                <span>Ad Unlock</span>
+                                <Lock className="w-2.5 h-2.5 text-amber-400" />
+                                <span>VIP Unlock</span>
                               </span>
                             ) : (
                               <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-white/10 text-white/70">
