@@ -25,10 +25,12 @@ export interface IAdService {
   initInAppInterstitial(): void;
   triggerMonetagInApp(): void;
   showRewardedInterstitial(): Promise<{ success: boolean; error?: any }>;
-  showRewardedPopup(): Promise<{ success: boolean; error?: any }>;
+  showRewardedPopup(minDurationSeconds?: number): Promise<{ success: boolean; error?: any; elapsedSeconds: number }>;
   unlockEpisodeWithRewardedAd(dramaId: string, episodeNumber: number): Promise<{ success: boolean; error?: any }>;
   unlockEpisodeWithCoins(dramaId: string, episodeNumber: number, cost?: number): { success: boolean; remainingCoins: number; error?: string };
-  claimDailyBonusWithPopup(bonusAmount?: number): Promise<{ success: boolean; coinsAwarded: number; newTotal: number; error?: any }>;
+  startDailyRewardSession(bonusAmount?: number): { startTime: number; minDurationSeconds: number; bonusAmount: number };
+  verifyAndClaimDailyBonus(startTime: number, bonusAmount?: number, minDurationSeconds?: number): { success: boolean; coinsAwarded: number; newTotal: number; elapsedSeconds: number; error?: string };
+  claimDailyBonusWithPopup(bonusAmount?: number, minWatchSeconds?: number): Promise<{ success: boolean; coinsAwarded: number; newTotal: number; elapsedSeconds: number; error?: any }>;
   isEpisodeUnlocked(dramaId: string, episodeNumber: number, freeToWatch?: boolean): boolean;
   unlockEpisode(dramaId: string, episodeNumber: number): void;
   getUnlockedEpisodes(): Record<string, number[]>;
@@ -43,6 +45,7 @@ export interface IAdService {
 
 export const AD_EPISODE_INTERVAL = 2; // Shows an ad every 2 episodes
 export const COIN_UNLOCK_COST = 20; // 20 coins to unlock a premium episode
+export const DAILY_REWARD_MIN_WATCH_SECONDS = 25; // Minimum 25 seconds watch requirement for daily bonus coins
 
 const DEFAULT_CONFIG: AdConfig = {
   adEpisodeInterval: AD_EPISODE_INTERVAL,
@@ -192,29 +195,56 @@ class AdService implements IAdService {
 
   /**
    * Trigger Rewarded Popup ad (e.g. for bonus rewards or instant unlock)
+   * Tracks elapsed duration to enforce viewing requirements.
    */
-  public async showRewardedPopup(): Promise<{ success: boolean; error?: any }> {
+  public async showRewardedPopup(
+    minDurationSeconds: number = DAILY_REWARD_MIN_WATCH_SECONDS
+  ): Promise<{ success: boolean; error?: any; elapsedSeconds: number }> {
+    const startTime = Date.now();
     if (typeof window !== 'undefined' && typeof (window as any).show_11683116 === 'function') {
       return new Promise((resolve) => {
         try {
           const promise = (window as any).show_11683116('pop');
           if (promise && typeof promise.then === 'function') {
             promise
-              .then(() => resolve({ success: true }))
+              .then(() => {
+                const elapsed = (Date.now() - startTime) / 1000;
+                if (elapsed < minDurationSeconds) {
+                  resolve({
+                    success: false,
+                    error: 'Reward failed! You must watch the ad for at least 25 seconds to claim your 50 coins.',
+                    elapsedSeconds: Math.floor(elapsed),
+                  });
+                } else {
+                  resolve({ success: true, elapsedSeconds: Math.floor(elapsed) });
+                }
+              })
               .catch((e: any) => {
                 console.error('[AdService] Monetag Rewarded Popup error:', e);
-                resolve({ success: false, error: e });
+                const elapsed = (Date.now() - startTime) / 1000;
+                resolve({ success: false, error: e, elapsedSeconds: Math.floor(elapsed) });
               });
           } else {
-            resolve({ success: true });
+            const elapsed = (Date.now() - startTime) / 1000;
+            if (elapsed < minDurationSeconds) {
+              resolve({
+                success: false,
+                error: 'Reward failed! You must watch the ad for at least 25 seconds to claim your 50 coins.',
+                elapsedSeconds: Math.floor(elapsed),
+              });
+            } else {
+              resolve({ success: true, elapsedSeconds: Math.floor(elapsed) });
+            }
           }
         } catch (e: any) {
           console.error('[AdService] Monetag Rewarded Popup exception:', e);
-          resolve({ success: false, error: e });
+          const elapsed = (Date.now() - startTime) / 1000;
+          resolve({ success: false, error: e, elapsedSeconds: Math.floor(elapsed) });
         }
       });
     }
-    return { success: true };
+    const elapsed = (Date.now() - startTime) / 1000;
+    return { success: elapsed >= minDurationSeconds, elapsedSeconds: Math.floor(elapsed) };
   }
 
   /**
@@ -407,17 +437,87 @@ class AdService implements IAdService {
   }
 
   /**
-   * Trigger Rewarded Popup ad and grant daily bonus coins
+   * Starts a daily reward ad session, invoking Monetag SDK and recording start time.
+   */
+  public startDailyRewardSession(bonusAmount: number = 50): {
+    startTime: number;
+    minDurationSeconds: number;
+    bonusAmount: number;
+  } {
+    const session = {
+      startTime: Date.now(),
+      minDurationSeconds: DAILY_REWARD_MIN_WATCH_SECONDS,
+      bonusAmount,
+    };
+
+    // Trigger Monetag Pop Ad
+    if (typeof window !== 'undefined' && typeof (window as any).show_11683116 === 'function') {
+      try {
+        (window as any).show_11683116('pop');
+      } catch (err) {
+        console.warn('[AdService] Monetag show_11683116 error:', err);
+      }
+    }
+
+    return session;
+  }
+
+  /**
+   * Verifies the completion of an ad session.
+   * If watched duration is < 25 seconds, rejects without granting any coins.
+   */
+  public verifyAndClaimDailyBonus(
+    startTime: number,
+    bonusAmount: number = 50,
+    minDurationSeconds: number = DAILY_REWARD_MIN_WATCH_SECONDS
+  ): {
+    success: boolean;
+    coinsAwarded: number;
+    newTotal: number;
+    elapsedSeconds: number;
+    error?: string;
+  } {
+    const elapsedMs = Date.now() - startTime;
+    const elapsedSeconds = Math.floor(elapsedMs / 1000);
+
+    if (elapsedSeconds < minDurationSeconds) {
+      return {
+        success: false,
+        coinsAwarded: 0,
+        newTotal: this.getUserCoins(),
+        elapsedSeconds,
+        error: 'Reward failed! You must watch the ad for at least 25 seconds to claim your 50 coins.',
+      };
+    }
+
+    const newTotal = this.addCoins(bonusAmount);
+    return {
+      success: true,
+      coinsAwarded: bonusAmount,
+      newTotal,
+      elapsedSeconds,
+    };
+  }
+
+  /**
+   * Trigger Rewarded Popup ad and grant daily bonus coins ONLY upon verified 25-second completion.
    */
   public async claimDailyBonusWithPopup(
-    bonusAmount: number = 50
-  ): Promise<{ success: boolean; coinsAwarded: number; newTotal: number; error?: any }> {
-    const res = await this.showRewardedPopup();
-    if (res.success) {
+    bonusAmount: number = 50,
+    minWatchSeconds: number = DAILY_REWARD_MIN_WATCH_SECONDS
+  ): Promise<{ success: boolean; coinsAwarded: number; newTotal: number; elapsedSeconds: number; error?: any }> {
+    const res = await this.showRewardedPopup(minWatchSeconds);
+    if (res.success && res.elapsedSeconds >= minWatchSeconds) {
       const newTotal = this.addCoins(bonusAmount);
-      return { success: true, coinsAwarded: bonusAmount, newTotal };
+      return { success: true, coinsAwarded: bonusAmount, newTotal, elapsedSeconds: res.elapsedSeconds };
     }
-    return { success: false, coinsAwarded: 0, newTotal: this.getUserCoins(), error: res.error };
+    return {
+      success: false,
+      coinsAwarded: 0,
+      newTotal: this.getUserCoins(),
+      elapsedSeconds: res.elapsedSeconds || 0,
+      error: res.error || 'Reward failed! You must watch the ad for at least 25 seconds to claim your 50 coins.',
+    };
   }
 
   public onUnlockListener(listener: (dramaId: string, episodeNumber: number) => void): () => void {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   User,
   Sparkles,
@@ -18,10 +18,13 @@ import {
   Gift,
   Loader2,
   CheckCircle2,
+  AlertCircle,
+  X,
+  Play,
 } from 'lucide-react';
 import { TelegramUser, UserPreferences } from '../../types';
 import { userProgressRepository } from '../../repositories/userProgressRepository';
-import { adService } from '../../services/adService';
+import { adService, DAILY_REWARD_MIN_WATCH_SECONDS } from '../../services/adService';
 import { videoService } from '../../services/videoService';
 
 interface ProfileViewProps {
@@ -53,9 +56,26 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [coins, setCoins] = useState<number>(() => adService.getUserCoins());
   const [isClaimingBonus, setIsClaimingBonus] = useState(false);
   const [bonusRewardSuccess, setBonusRewardSuccess] = useState<number | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Ad modal and countdown state
+  const [isAdModalOpen, setIsAdModalOpen] = useState(false);
+  const [adWatchRemaining, setAdWatchRemaining] = useState(DAILY_REWARD_MIN_WATCH_SECONDS);
+  const [adStartTime, setAdStartTime] = useState<number | null>(null);
+  const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const [adInterval, setAdInterval] = useState(adService.getConfig().adEpisodeInterval);
   const [r2Url, setR2Url] = useState(videoService.getCloudflareR2BaseUrl());
+
+  const showToast = (msg: string) => {
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
+    }
+    setToastMessage(msg);
+    toastTimeoutRef.current = setTimeout(() => {
+      setToastMessage(null);
+    }, 5000);
+  };
 
   useEffect(() => {
     userProgressRepository.getPreferences().then(setPreferences);
@@ -74,31 +94,69 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       setCoins(newCoins);
     });
 
-    return () => unsubscribeCoins();
+    return () => {
+      unsubscribeCoins();
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
+      }
+    };
   }, []);
 
-  const handleClaimReward = async () => {
-    if (isClaimingBonus) return;
+  // Countdown timer effect for active Daily Reward Ad session
+  useEffect(() => {
+    if (!isAdModalOpen || adStartTime === null) {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      setAdWatchRemaining((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          // Verify with adService (min 25s requirement)
+          const result = adService.verifyAndClaimDailyBonus(adStartTime, 50, DAILY_REWARD_MIN_WATCH_SECONDS);
+          setIsAdModalOpen(false);
+          setIsClaimingBonus(false);
+
+          if (result.success) {
+            onHaptic('success');
+            setBonusRewardSuccess(result.coinsAwarded);
+            showToast('+50 VIP Coins claimed successfully!');
+            setTimeout(() => {
+              setBonusRewardSuccess(null);
+            }, 5000);
+          } else {
+            onHaptic('heavy');
+            showToast(result.error || 'Reward failed! You must watch the ad for at least 25 seconds to claim your 50 coins.');
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [isAdModalOpen, adStartTime, onHaptic]);
+
+  const handleStartClaimReward = () => {
+    if (isClaimingBonus || isAdModalOpen) return;
     setIsClaimingBonus(true);
+    setToastMessage(null);
+    setBonusRewardSuccess(null);
     onHaptic('medium');
 
-    try {
-      // Trigger Rewarded Popup Ad via Monetag
-      const res = await adService.claimDailyBonusWithPopup(50);
-      if (res.success) {
-        onHaptic('success');
-        setBonusRewardSuccess(res.coinsAwarded);
-        setTimeout(() => {
-          setBonusRewardSuccess(null);
-        }, 4000);
-      } else {
-        onHaptic('heavy');
-      }
-    } catch (e) {
-      console.error('[ProfileView] Claim bonus error:', e);
-    } finally {
-      setIsClaimingBonus(false);
-    }
+    // Launch Monetag ad and start tracking timestamp
+    const session = adService.startDailyRewardSession(50);
+    setAdStartTime(session.startTime);
+    setAdWatchRemaining(DAILY_REWARD_MIN_WATCH_SECONDS);
+    setIsAdModalOpen(true);
+  };
+
+  const handleCancelAdEarly = () => {
+    // If cancelled before 25 seconds
+    setIsAdModalOpen(false);
+    setIsClaimingBonus(false);
+    onHaptic('heavy');
+    showToast('Reward failed! You must watch the ad for at least 25 seconds to claim your 50 coins.');
   };
 
   const handleTogglePref = async (key: keyof UserPreferences) => {
@@ -122,7 +180,22 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 relative">
+      {/* Toast Alert Notification */}
+      {toastMessage && (
+        <div className="p-3.5 rounded-2xl bg-rose-600/95 backdrop-blur-md text-white text-xs font-bold shadow-2xl border border-rose-400 flex items-center justify-between animate-in fade-in slide-in-from-top-2 z-30">
+          <div className="flex items-center space-x-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-amber-300" />
+            <span className="leading-snug">{toastMessage}</span>
+          </div>
+          <button
+            onClick={() => setToastMessage(null)}
+            className="p-1 rounded-full bg-white/20 text-white hover:bg-white/30 ml-2 shrink-0 cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
       {/* Header Profile Card */}
       <div className="p-5 rounded-3xl bg-gradient-to-br from-[#181a24] to-[#10121a] border border-white/10 relative overflow-hidden">
         <div className="flex items-center space-x-4">
@@ -200,18 +273,18 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         ) : (
           <div className="space-y-2">
             <p className="text-xs text-white/70 leading-relaxed">
-              Watch a quick sponsored ad popup to instantly claim 50 VIP Coins for unlocking premium episodes!
+              Watch a quick 25-second sponsored ad popup to claim 50 VIP Coins for unlocking premium episodes!
             </p>
             <button
               id="profile-claim-reward-btn"
-              onClick={handleClaimReward}
+              onClick={handleStartClaimReward}
               disabled={isClaimingBonus}
               className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-amber-500 via-amber-600 to-rose-600 hover:from-amber-400 hover:to-rose-500 active:scale-95 text-white font-black text-xs flex items-center justify-center space-x-2 shadow-lg shadow-amber-500/25 transition-all cursor-pointer border border-amber-400/30"
             >
               {isClaimingBonus ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin text-white" />
-                  <span>Loading Sponsored Reward...</span>
+                  <span>Watching Sponsored Ad ({adWatchRemaining}s)...</span>
                 </>
               ) : (
                 <>
@@ -223,6 +296,78 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           </div>
         )}
       </div>
+
+      {/* Fullscreen Ad Verification Modal (25-Second Watch Requirement) */}
+      {isAdModalOpen && (
+        <div
+          id="daily-reward-ad-modal"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in"
+        >
+          <div className="relative w-full max-w-sm rounded-3xl bg-[#12141d] border border-amber-500/40 p-6 shadow-2xl shadow-amber-950/50 flex flex-col items-center text-center space-y-4">
+            {/* Header Badge */}
+            <div className="flex items-center space-x-1.5 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-300 text-[11px] font-black uppercase tracking-wider">
+              <Sparkles className="w-3.5 h-3.5 fill-amber-300" />
+              <span>Sponsored Reward Ad</span>
+            </div>
+
+            {/* Title & Icon */}
+            <div className="space-y-1.5">
+              <h3 className="text-xl font-black text-white font-display">
+                Watching Sponsored Ad
+              </h3>
+              <p className="text-xs text-white/60 leading-relaxed px-2">
+                Monetag Pop Ad active. Watch for at least 25 seconds to verify and claim your +50 VIP Coins.
+              </p>
+            </div>
+
+            {/* 25-Second Countdown Timer Circle / Box */}
+            <div className="relative w-28 h-28 flex items-center justify-center my-2">
+              <div className="absolute inset-0 rounded-full border-4 border-white/10" />
+              <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-amber-500/20 to-rose-500/20 border-2 border-amber-400/60 flex flex-col items-center justify-center shadow-lg shadow-amber-500/20">
+                <Clock className="w-5 h-5 text-amber-400 mb-0.5 animate-pulse" />
+                <span className="text-2xl font-black text-white font-display">
+                  {adWatchRemaining}s
+                </span>
+              </div>
+            </div>
+
+            {/* Animated Progress Bar */}
+            <div className="w-full space-y-1.5">
+              <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-amber-400 via-rose-500 to-amber-500 transition-all duration-1000 ease-linear rounded-full"
+                  style={{
+                    width: `${Math.min(100, Math.max(0, ((DAILY_REWARD_MIN_WATCH_SECONDS - adWatchRemaining) / DAILY_REWARD_MIN_WATCH_SECONDS) * 100))}%`,
+                  }}
+                />
+              </div>
+              <div className="flex items-center justify-between text-[10px] text-white/40 font-semibold px-1">
+                <span>0s</span>
+                <span className="text-amber-300">Min 25s required</span>
+                <span>25s</span>
+              </div>
+            </div>
+
+            {/* Warning Note */}
+            <div className="p-3 rounded-2xl bg-amber-950/30 border border-amber-500/20 flex items-start space-x-2 text-left">
+              <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <p className="text-[11px] text-amber-200/80 leading-snug">
+                Closing or skipping before 25 seconds will cancel verification and forfeit your reward.
+              </p>
+            </div>
+
+            {/* Cancel Early Button */}
+            <button
+              id="cancel-ad-watch-btn"
+              onClick={handleCancelAdEarly}
+              className="w-full py-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/15 text-white/70 hover:text-white text-xs font-bold transition-all cursor-pointer flex items-center justify-center space-x-1.5 active:scale-98"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>Cancel & Close Ad (Forfeit Coins)</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Admin Panel Access Card with PIN Verification */}
       {onOpenAdmin && (
