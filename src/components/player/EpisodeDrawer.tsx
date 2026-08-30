@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Play, CheckCircle2, Lock, Sparkles, Loader2 } from 'lucide-react';
+import { X, Play, CheckCircle2, Lock, Sparkles, Loader2, Coins, AlertCircle } from 'lucide-react';
 import { Episode } from '../../types';
-import { adService } from '../../services/adService';
+import { adService, COIN_UNLOCK_COST } from '../../services/adService';
 
 interface EpisodeDrawerProps {
   isOpen: boolean;
@@ -28,6 +28,44 @@ export const EpisodeDrawer: React.FC<EpisodeDrawerProps> = ({
   onHaptic,
 }) => {
   const [unlockingEpNumber, setUnlockingEpNumber] = useState<number | null>(null);
+  const [coins, setCoins] = useState<number>(() => adService.getUserCoins());
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    const unsub = adService.onCoinsListener((newCoins) => {
+      setCoins(newCoins);
+    });
+    return () => unsub();
+  }, []);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage(null);
+    }, 4500);
+  };
+
+  const handleUnlockWithCoins = (e: React.MouseEvent, epNumber: number) => {
+    e.stopPropagation();
+    if (unlockingEpNumber !== null) return;
+
+    if (coins < COIN_UNLOCK_COST) {
+      onHaptic?.('heavy');
+      showToast('Not enough coins! Watch a daily ad to claim 50 free coins.');
+      return;
+    }
+
+    onHaptic?.('medium');
+    const res = adService.unlockEpisodeWithCoins(dramaId, epNumber, COIN_UNLOCK_COST);
+    if (res.success) {
+      onHaptic?.('success');
+      onSelectEpisode(epNumber);
+      onClose();
+    } else {
+      onHaptic?.('heavy');
+      showToast(res.error || 'Not enough coins! Watch a daily ad to claim 50 free coins.');
+    }
+  };
 
   const handleUnlockWithAd = async (e: React.MouseEvent, epNumber: number) => {
     e.stopPropagation();
@@ -70,29 +108,54 @@ export const EpisodeDrawer: React.FC<EpisodeDrawerProps> = ({
             animate={{ y: 0 }}
             exit={{ y: '100%' }}
             transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-            className="relative z-10 w-full max-h-[75vh] bg-[#12141a] rounded-t-3xl border-t border-white/10 flex flex-col overflow-hidden pb-safe"
+            className="relative z-10 w-full max-h-[82vh] bg-[#12141a] rounded-t-3xl border-t border-white/10 flex flex-col overflow-hidden pb-safe"
           >
+            {/* Toast Alert Notice */}
+            {toastMessage && (
+              <div className="absolute top-3 left-4 right-4 z-30 p-3 rounded-2xl bg-rose-600/95 backdrop-blur-md text-white text-xs font-bold shadow-2xl border border-rose-400 flex items-center justify-between animate-in fade-in slide-in-from-top-2">
+                <div className="flex items-center space-x-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-amber-300" />
+                  <span className="leading-snug">{toastMessage}</span>
+                </div>
+                <button
+                  onClick={() => setToastMessage(null)}
+                  className="p-1 rounded-full bg-white/20 text-white hover:bg-white/30"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            )}
+
             {/* Header */}
             <div className="flex items-center justify-between p-4 border-b border-white/5">
               <div>
-                <h3 className="font-bold text-white text-base truncate max-w-[260px]">
+                <h3 className="font-bold text-white text-base truncate max-w-[220px]">
                   {dramaTitle}
                 </h3>
                 <p className="text-xs text-white/50">
                   {episodes.length} Episodes Total
                 </p>
               </div>
-              <button
-                id="close-episode-drawer-btn"
-                onClick={onClose}
-                className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white/80 active:scale-95"
-              >
-                <X className="w-4 h-4" />
-              </button>
+
+              <div className="flex items-center space-x-2">
+                {/* Coins Badge in Drawer */}
+                <div className="px-2.5 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 flex items-center space-x-1.5 text-amber-300">
+                  <Coins className="w-3.5 h-3.5 text-amber-400" />
+                  <span className="text-xs font-black font-display">{coins}</span>
+                </div>
+
+                <button
+                  id="close-episode-drawer-btn"
+                  onClick={onClose}
+                  className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white/80 active:scale-95"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
             {/* Episode Grid / List */}
-            <div className="overflow-y-auto p-4 space-y-2.5 max-h-[60vh] no-scrollbar">
+            <div className="overflow-y-auto p-4 space-y-2.5 max-h-[65vh] no-scrollbar">
               {episodes.map((ep) => {
                 const isActive = ep.episodeNumber === currentEpisodeNumber;
                 const isCompleted = ep.episodeNumber < currentEpisodeNumber;
@@ -157,7 +220,7 @@ export const EpisodeDrawer: React.FC<EpisodeDrawerProps> = ({
                       </div>
                     </div>
 
-                    <div className="shrink-0 flex items-center space-x-2">
+                    <div className="shrink-0 flex items-center space-x-1.5">
                       {isActive && (
                         <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/30 text-rose-300 border border-rose-500/40">
                           Playing
@@ -165,24 +228,40 @@ export const EpisodeDrawer: React.FC<EpisodeDrawerProps> = ({
                       )}
 
                       {!isUnlocked && (
-                        <button
-                          id={`drawer-unlock-ep-${ep.episodeNumber}-btn`}
-                          onClick={(e) => handleUnlockWithAd(e, ep.episodeNumber)}
-                          disabled={unlockingEpNumber !== null}
-                          className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-rose-600 hover:from-amber-400 hover:to-rose-500 text-white font-extrabold text-xs flex items-center space-x-1 shadow-lg shadow-amber-500/20 active:scale-95 transition-all cursor-pointer"
-                        >
-                          {isUnlockingThis ? (
-                            <>
-                              <Loader2 className="w-3 h-3 animate-spin" />
-                              <span>Loading...</span>
-                            </>
-                          ) : (
-                            <>
-                              <Sparkles className="w-3 h-3 text-amber-200 fill-amber-200" />
-                              <span>Watch Ad to Unlock</span>
-                            </>
-                          )}
-                        </button>
+                        <>
+                          {/* Unlock with 20 Coins Option */}
+                          <button
+                            id={`drawer-unlock-coins-ep-${ep.episodeNumber}-btn`}
+                            onClick={(e) => handleUnlockWithCoins(e, ep.episodeNumber)}
+                            disabled={unlockingEpNumber !== null}
+                            className="px-2.5 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-extrabold text-[11px] flex items-center space-x-1 border border-amber-500/40 shadow-sm active:scale-95 transition-all cursor-pointer"
+                            title="Unlock with 20 Coins"
+                          >
+                            <Coins className="w-3 h-3 text-amber-400" />
+                            <span>20 Coins</span>
+                          </button>
+
+                          {/* Watch Ad to Unlock Option */}
+                          <button
+                            id={`drawer-unlock-ad-ep-${ep.episodeNumber}-btn`}
+                            onClick={(e) => handleUnlockWithAd(e, ep.episodeNumber)}
+                            disabled={unlockingEpNumber !== null}
+                            className="px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-rose-600 hover:from-amber-400 hover:to-rose-500 text-white font-extrabold text-[11px] flex items-center space-x-1 shadow-md shadow-amber-500/20 active:scale-95 transition-all cursor-pointer"
+                            title="Watch Ad to Unlock"
+                          >
+                            {isUnlockingThis ? (
+                              <>
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                                <span>Ad...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Sparkles className="w-3 h-3 text-amber-200 fill-amber-200" />
+                                <span>Watch Ad</span>
+                              </>
+                            )}
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>

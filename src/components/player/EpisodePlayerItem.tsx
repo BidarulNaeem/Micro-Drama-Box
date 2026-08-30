@@ -18,10 +18,12 @@ import {
   Sparkles,
   Loader2,
   Film,
+  Coins,
+  X,
 } from 'lucide-react';
 import { Drama, Episode } from '../../types';
 import { videoService } from '../../services/videoService';
-import { adService } from '../../services/adService';
+import { adService, COIN_UNLOCK_COST } from '../../services/adService';
 
 interface EpisodePlayerItemProps {
   episode: Episode;
@@ -67,6 +69,8 @@ export const EpisodePlayerItem: React.FC<EpisodePlayerItemProps> = ({
     adService.isEpisodeUnlocked(drama.id, episode.episodeNumber, episode.freeToWatch)
   );
   const [isUnlockingWithAd, setIsUnlockingWithAd] = useState(false);
+  const [coins, setCoins] = useState<number>(() => adService.getUserCoins());
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isBuffering, setIsBuffering] = useState(true);
@@ -80,16 +84,52 @@ export const EpisodePlayerItem: React.FC<EpisodePlayerItemProps> = ({
   const [floatingHearts, setFloatingHearts] = useState<{ id: number; x: number; y: number }[]>([]);
   const [isSeeking, setIsSeeking] = useState(false);
 
-  // Sync unlock status with AdService
+  // Sync unlock status & coins with AdService
   useEffect(() => {
     setIsUnlocked(adService.isEpisodeUnlocked(drama.id, episode.episodeNumber, episode.freeToWatch));
-    const unsubscribe = adService.onUnlockListener((unlockedDramaId, unlockedEp) => {
+    const unsubscribeUnlock = adService.onUnlockListener((unlockedDramaId, unlockedEp) => {
       if (unlockedDramaId === drama.id && unlockedEp === episode.episodeNumber) {
         setIsUnlocked(true);
       }
     });
-    return () => unsubscribe();
+    const unsubscribeCoins = adService.onCoinsListener((newCoins) => {
+      setCoins(newCoins);
+    });
+    return () => {
+      unsubscribeUnlock();
+      unsubscribeCoins();
+    };
   }, [drama.id, episode.episodeNumber, episode.freeToWatch]);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage(null);
+    }, 4500);
+  };
+
+  const handleUnlockWithCoins = () => {
+    if (isUnlockingWithAd) return;
+
+    if (coins < COIN_UNLOCK_COST) {
+      onHaptic('heavy');
+      showToast('Not enough coins! Watch a daily ad to claim 50 free coins.');
+      return;
+    }
+
+    onHaptic('medium');
+    const res = adService.unlockEpisodeWithCoins(drama.id, episode.episodeNumber, COIN_UNLOCK_COST);
+    if (res.success) {
+      setIsUnlocked(true);
+      onHaptic('success');
+      if (videoRef.current && isActive) {
+        videoRef.current.play().catch(() => {});
+      }
+    } else {
+      onHaptic('heavy');
+      showToast(res.error || 'Not enough coins! Watch a daily ad to claim 50 free coins.');
+    }
+  };
 
   const handleWatchAdToUnlock = async () => {
     if (isUnlockingWithAd) return;
@@ -483,36 +523,70 @@ export const EpisodePlayerItem: React.FC<EpisodePlayerItemProps> = ({
         </div>
       )}
 
-      {/* Locked Episode Overlay - Rewarded Interstitial Prompt */}
+      {/* Locked Episode Overlay - Rewarded Interstitial & Coin Unlock Prompt */}
       {!isUnlocked && (
         <div className="absolute inset-0 z-35 flex flex-col items-center justify-center p-6 bg-black/85 backdrop-blur-md text-center">
-          <div className="relative mb-4">
-            <div className="w-20 h-20 rounded-3xl bg-gradient-to-tr from-amber-600/30 to-rose-600/30 border border-amber-500/40 flex items-center justify-center text-amber-400 shadow-2xl shadow-amber-500/20">
-              <Lock className="w-9 h-9 text-amber-400" />
+          {/* Toast Notification for Player */}
+          {toastMessage && (
+            <div className="absolute top-16 left-4 right-4 z-40 p-3 rounded-2xl bg-rose-600/95 backdrop-blur-md text-white text-xs font-bold shadow-2xl border border-rose-400 flex items-center justify-between animate-in fade-in slide-in-from-top-2">
+              <div className="flex items-center space-x-2 text-left">
+                <AlertCircle className="w-4 h-4 shrink-0 text-amber-300" />
+                <span className="leading-snug">{toastMessage}</span>
+              </div>
+              <button
+                onClick={() => setToastMessage(null)}
+                className="p-1 rounded-full bg-white/20 text-white hover:bg-white/30 ml-2 shrink-0"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
+          <div className="relative mb-3">
+            <div className="w-18 h-18 rounded-3xl bg-gradient-to-tr from-amber-600/30 to-rose-600/30 border border-amber-500/40 flex items-center justify-center text-amber-400 shadow-2xl shadow-amber-500/20">
+              <Lock className="w-8 h-8 text-amber-400" />
             </div>
             <div className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-rose-500 flex items-center justify-center border-2 border-[#12141a]">
               <Sparkles className="w-3 h-3 text-white fill-white" />
             </div>
           </div>
 
-          <span className="px-3 py-1 rounded-full text-xs font-extrabold uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/40 mb-2">
-            Premium Episode {episode.episodeNumber}
-          </span>
+          <div className="flex items-center space-x-2 mb-2">
+            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/40">
+              Premium Episode {episode.episodeNumber}
+            </span>
+            <div className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-white/10 text-white/90 border border-white/15 flex items-center space-x-1">
+              <Coins className="w-3 h-3 text-amber-400" />
+              <span>{coins} Coins</span>
+            </div>
+          </div>
 
-          <h3 className="text-xl font-black text-white font-display tracking-tight mb-1.5">
+          <h3 className="text-xl font-black text-white font-display tracking-tight mb-1">
             {episode.title}
           </h3>
 
-          <p className="text-xs text-white/70 max-w-xs leading-relaxed mb-6">
-            Watch a short sponsored ad to instantly unlock this episode in HD and continue streaming!
+          <p className="text-xs text-white/70 max-w-xs leading-relaxed mb-5">
+            Unlock this episode instantly using 20 VIP Coins or watch a short sponsored ad!
           </p>
 
-          <div className="w-full max-w-xs space-y-3">
+          <div className="w-full max-w-xs space-y-2.5">
+            {/* Option 1: Unlock with 20 Coins */}
+            <button
+              id={`player-unlock-coins-btn-ep-${episode.episodeNumber}`}
+              onClick={handleUnlockWithCoins}
+              disabled={isUnlockingWithAd}
+              className="w-full py-3.5 px-5 rounded-2xl bg-gradient-to-r from-amber-500 via-amber-600 to-amber-500 hover:from-amber-400 hover:to-amber-400 active:scale-95 text-white font-black text-xs sm:text-sm flex items-center justify-center space-x-2 shadow-xl shadow-amber-500/25 transition-all cursor-pointer border border-amber-300/40"
+            >
+              <Coins className="w-4 h-4 text-amber-200 fill-amber-200" />
+              <span>UNLOCK WITH 20 COINS</span>
+            </button>
+
+            {/* Option 2: Watch Ad to Unlock */}
             <button
               id={`player-unlock-btn-ep-${episode.episodeNumber}`}
               onClick={handleWatchAdToUnlock}
               disabled={isUnlockingWithAd}
-              className="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-amber-500 via-rose-600 to-rose-500 hover:from-amber-400 hover:to-rose-400 active:scale-95 text-white font-black text-sm flex items-center justify-center space-x-2 shadow-2xl shadow-rose-600/40 transition-all cursor-pointer border border-white/20"
+              className="w-full py-3.5 px-5 rounded-2xl bg-gradient-to-r from-rose-600 via-rose-500 to-rose-600 hover:from-rose-500 hover:to-rose-400 active:scale-95 text-white font-black text-xs sm:text-sm flex items-center justify-center space-x-2 shadow-xl shadow-rose-600/30 transition-all cursor-pointer border border-rose-400/30"
             >
               {isUnlockingWithAd ? (
                 <>
@@ -521,12 +595,13 @@ export const EpisodePlayerItem: React.FC<EpisodePlayerItemProps> = ({
                 </>
               ) : (
                 <>
-                  <Sparkles className="w-4 h-4 text-amber-200 fill-amber-200" />
-                  <span>WATCH AD TO UNLOCK</span>
+                  <Sparkles className="w-4 h-4 text-rose-200 fill-rose-200" />
+                  <span>WATCH AD TO UNLOCK (FREE)</span>
                 </>
               )}
             </button>
 
+            {/* Option 3: Choose Different Episode */}
             <button
               id={`player-open-drawer-btn-ep-${episode.episodeNumber}`}
               onClick={onOpenEpisodesDrawer}

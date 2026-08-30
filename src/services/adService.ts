@@ -27,12 +27,14 @@ export interface IAdService {
   showRewardedInterstitial(): Promise<{ success: boolean; error?: any }>;
   showRewardedPopup(): Promise<{ success: boolean; error?: any }>;
   unlockEpisodeWithRewardedAd(dramaId: string, episodeNumber: number): Promise<{ success: boolean; error?: any }>;
+  unlockEpisodeWithCoins(dramaId: string, episodeNumber: number, cost?: number): { success: boolean; remainingCoins: number; error?: string };
   claimDailyBonusWithPopup(bonusAmount?: number): Promise<{ success: boolean; coinsAwarded: number; newTotal: number; error?: any }>;
   isEpisodeUnlocked(dramaId: string, episodeNumber: number, freeToWatch?: boolean): boolean;
   unlockEpisode(dramaId: string, episodeNumber: number): void;
   getUnlockedEpisodes(): Record<string, number[]>;
   getUserCoins(): number;
   addCoins(amount: number): number;
+  deductCoins(amount: number): boolean;
   requestInterstitialAd(event: AdTriggerEvent): Promise<AdResult>;
   onAdTriggerListener(listener: (event: AdTriggerEvent) => void): () => void;
   onUnlockListener(listener: (dramaId: string, episodeNumber: number) => void): () => void;
@@ -40,6 +42,7 @@ export interface IAdService {
 }
 
 export const AD_EPISODE_INTERVAL = 2; // Shows an ad every 2 episodes
+export const COIN_UNLOCK_COST = 20; // 20 coins to unlock a premium episode
 
 const DEFAULT_CONFIG: AdConfig = {
   adEpisodeInterval: AD_EPISODE_INTERVAL,
@@ -359,6 +362,51 @@ class AdService implements IAdService {
       console.warn('[AdService] Failed to update coins:', e);
     }
     return updated;
+  }
+
+  /**
+   * Deduct coins from user balance if sufficient
+   */
+  public deductCoins(amount: number): boolean {
+    const current = this.getUserCoins();
+    if (current < amount) {
+      return false;
+    }
+    this.addCoins(-amount);
+    return true;
+  }
+
+  /**
+   * Unlock an episode by spending coins (default 20 coins)
+   */
+  public unlockEpisodeWithCoins(
+    dramaId: string,
+    episodeNumber: number,
+    cost: number = COIN_UNLOCK_COST
+  ): { success: boolean; remainingCoins: number; error?: string } {
+    const current = this.getUserCoins();
+    if (current < cost) {
+      return {
+        success: false,
+        remainingCoins: current,
+        error: 'Not enough coins! Watch a daily ad to claim 50 free coins.',
+      };
+    }
+
+    const deducted = this.deductCoins(cost);
+    if (!deducted) {
+      return {
+        success: false,
+        remainingCoins: current,
+        error: 'Not enough coins! Watch a daily ad to claim 50 free coins.',
+      };
+    }
+
+    this.unlockEpisode(dramaId, episodeNumber);
+    return {
+      success: true,
+      remainingCoins: this.getUserCoins(),
+    };
   }
 
   /**
