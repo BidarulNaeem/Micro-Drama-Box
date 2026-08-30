@@ -43,9 +43,11 @@ export interface IAdService {
   onCoinsListener(listener: (coins: number) => void): () => void;
 }
 
-export const AD_EPISODE_INTERVAL = 2; // Shows an ad every 2 episodes
+export const AD_EPISODE_INTERVAL = 5; // Shows an automatic ad only every 5 episodes
 export const COIN_UNLOCK_COST = 20; // 20 coins to unlock a premium episode
 export const DAILY_REWARD_MIN_WATCH_SECONDS = 25; // Minimum 25 seconds watch requirement for daily bonus coins
+export const AUTO_AD_COOLDOWN_MS = 5 * 60 * 1000; // Minimum 5 minutes cooldown between automatic ads
+export const APP_DEFAULT_TITLE = 'Vela - Short Drama Streaming';
 
 const DEFAULT_CONFIG: AdConfig = {
   adEpisodeInterval: AD_EPISODE_INTERVAL,
@@ -53,6 +55,7 @@ const DEFAULT_CONFIG: AdConfig = {
 };
 
 const STORAGE_KEY_WATCH_COUNT = 'dramapulse_ad_watch_counter';
+const STORAGE_KEY_LAST_AUTO_AD_TIME = 'dramapulse_last_auto_ad_time';
 const STORAGE_KEY_AD_CONFIG = 'dramapulse_ad_config';
 const STORAGE_KEY_UNLOCKED_EPISODES = 'dramapulse_unlocked_episodes';
 const STORAGE_KEY_USER_COINS = 'dramapulse_user_coins';
@@ -61,6 +64,7 @@ const DEFAULT_INITIAL_COINS = 100;
 class AdService implements IAdService {
   private config: AdConfig;
   private watchedSinceLastAd: number = 0;
+  private lastAutoAdTime: number = 0;
   private listeners: Set<(event: AdTriggerEvent) => void> = new Set();
   private unlockListeners: Set<(dramaId: string, episodeNumber: number) => void> = new Set();
   private coinListeners: Set<(coins: number) => void> = new Set();
@@ -69,6 +73,7 @@ class AdService implements IAdService {
   constructor() {
     this.config = this.loadConfig();
     this.watchedSinceLastAd = this.loadCounter();
+    this.lastAutoAdTime = this.loadLastAutoAdTime();
   }
 
   private loadConfig(): AdConfig {
@@ -100,6 +105,33 @@ class AdService implements IAdService {
     }
   }
 
+  private loadLastAutoAdTime(): number {
+    try {
+      const val = localStorage.getItem(STORAGE_KEY_LAST_AUTO_AD_TIME);
+      return val ? parseInt(val, 10) || 0 : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  private persistLastAutoAdTime(): void {
+    try {
+      localStorage.setItem(STORAGE_KEY_LAST_AUTO_AD_TIME, this.lastAutoAdTime.toString());
+    } catch {
+      // ignore
+    }
+  }
+
+  public getLastAutoAdTime(): number {
+    return this.lastAutoAdTime;
+  }
+
+  public getCooldownRemainingSeconds(): number {
+    const elapsed = Date.now() - this.lastAutoAdTime;
+    const remaining = Math.max(0, AUTO_AD_COOLDOWN_MS - elapsed);
+    return Math.ceil(remaining / 1000);
+  }
+
   public getConfig(): AdConfig {
     return { ...this.config };
   }
@@ -128,6 +160,7 @@ class AdService implements IAdService {
 
   /**
    * Initializes the Monetag In-App Interstitial format with optimal frequency & capping
+   * Frequency: every 5 transitions, minimum 5 minutes (300s) interval.
    */
   public initInAppInterstitial(): void {
     if (this.isInAppInitialized) return;
@@ -136,15 +169,15 @@ class AdService implements IAdService {
         (window as any).show_11683116({
           type: 'inApp',
           inAppSettings: {
-            frequency: 2,
+            frequency: 5,
             capping: 0.1,
-            interval: 30,
+            interval: 300,
             timeout: 5,
             everyPage: false,
           },
         });
         this.isInAppInitialized = true;
-        console.info('[AdService] Monetag In-App Interstitial initialized (Zone 11683116).');
+        console.info('[AdService] Monetag In-App Interstitial initialized with 5-episode / 5-min capping (Zone 11683116).');
       } catch (err) {
         console.warn('[AdService] Monetag In-App initialization notice:', err);
       }
@@ -152,7 +185,7 @@ class AdService implements IAdService {
   }
 
   /**
-   * Triggers the Monetag In-App Interstitial format directly
+   * Triggers the Monetag In-App Interstitial format directly with 5-min capping
    */
   public triggerMonetagInApp(): void {
     if (typeof window !== 'undefined' && typeof (window as any).show_11683116 === 'function') {
@@ -160,9 +193,9 @@ class AdService implements IAdService {
         (window as any).show_11683116({
           type: 'inApp',
           inAppSettings: {
-            frequency: 2,
+            frequency: 5,
             capping: 0.1,
-            interval: 30,
+            interval: 300,
             timeout: 5,
             everyPage: false,
           },
@@ -248,7 +281,7 @@ class AdService implements IAdService {
   }
 
   /**
-   * Increments the persistent watch counter and triggers ad if threshold is reached
+   * Increments the persistent watch counter and triggers ad if threshold and cooldown are met
    */
   public incrementWatchCounter(dramaId: string, episodeNumber: number): number {
     this.watchedSinceLastAd += 1;
@@ -261,6 +294,11 @@ class AdService implements IAdService {
         totalWatchedSinceLastAd: this.watchedSinceLastAd,
       };
 
+      // Reset counter & update cooldown timestamp
+      this.lastAutoAdTime = Date.now();
+      this.persistLastAutoAdTime();
+      this.resetCounter();
+
       // Trigger Monetag In-App Interstitial
       this.triggerMonetagInApp();
 
@@ -271,12 +309,16 @@ class AdService implements IAdService {
     return this.watchedSinceLastAd;
   }
 
-  public shouldTriggerAd(episodeNumber: number): boolean {
+  public shouldTriggerAd(_episodeNumber?: number): boolean {
     if (!this.config.enabled || this.config.adEpisodeInterval <= 0) {
       return false;
     }
-    // Triggers when watch counter reaches the interval (e.g. after episode 2, 4, 6...)
-    return this.watchedSinceLastAd >= this.config.adEpisodeInterval;
+    // Triggers ONLY after interval episodes (default: 5) AND minimum 5-minute cooldown
+    const intervalMet = this.watchedSinceLastAd >= this.config.adEpisodeInterval;
+    const now = Date.now();
+    const cooldownMet = (now - this.lastAutoAdTime) >= AUTO_AD_COOLDOWN_MS;
+
+    return intervalMet && cooldownMet;
   }
 
   /**
@@ -289,7 +331,9 @@ class AdService implements IAdService {
 
     console.info(`[AdService] Interstitial Ad Triggered for Drama: ${event.dramaId}, Episode: ${event.episodeNumber}`);
 
-    // Reset the internal counter upon ad trigger
+    // Reset the internal counter & update cooldown timestamp upon ad trigger
+    this.lastAutoAdTime = Date.now();
+    this.persistLastAutoAdTime();
     this.resetCounter();
 
     // Trigger Monetag In-App Interstitial

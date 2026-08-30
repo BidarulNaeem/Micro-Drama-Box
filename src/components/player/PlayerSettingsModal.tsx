@@ -123,7 +123,7 @@ export const PlayerSettingsModal: React.FC<PlayerSettingsModalProps> = ({
                 <span>Architecture Diagnostics</span>
               </div>
               <p className="text-[11px] leading-relaxed">
-                Ad interval is configured to trigger every <strong className="text-white">{adConfig.adEpisodeInterval} episodes</strong>.
+                Automatic ad interval is set to every <strong className="text-white">{adConfig.adEpisodeInterval} episodes</strong> with a <strong className="text-white">5-minute cooldown</strong> timer.
                 HLS master playlist and Cloudflare R2 adapters are active.
               </p>
             </div>
