@@ -188,8 +188,11 @@ export const EpisodePlayerItem: React.FC<EpisodePlayerItemProps> = ({
 
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         setIsBuffering(false);
-        if (isActive) {
+        if (isActive && isUnlocked) {
           video.play().catch(() => setIsPlaying(false));
+        } else {
+          video.pause();
+          setIsPlaying(false);
         }
       });
 
@@ -308,6 +311,7 @@ export const EpisodePlayerItem: React.FC<EpisodePlayerItemProps> = ({
   const tapTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleTouchContainer = (e: React.MouseEvent | React.TouchEvent) => {
+    if (!isUnlocked) return;
     const now = Date.now();
     const DOUBLE_TAP_DELAY = 300;
 
@@ -326,6 +330,7 @@ export const EpisodePlayerItem: React.FC<EpisodePlayerItemProps> = ({
   };
 
   const togglePlayPause = () => {
+    if (!isUnlocked) return;
     const video = videoRef.current;
     if (!video) return;
 
@@ -467,6 +472,11 @@ export const EpisodePlayerItem: React.FC<EpisodePlayerItemProps> = ({
         onWaiting={() => setIsBuffering(true)}
         onCanPlay={() => setIsBuffering(false)}
         onPlaying={() => {
+          if (!isUnlocked) {
+            videoRef.current?.pause();
+            setIsPlaying(false);
+            return;
+          }
           setIsBuffering(false);
           setIsPlaying(true);
         }}

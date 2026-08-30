@@ -278,12 +278,9 @@ class AdService implements IAdService {
 
   /**
    * Check if a specific episode is unlocked for playback.
-   * Free to watch episodes (or first 2 episodes) are always unlocked.
+   * By default, every episode in the app is locked until unlocked by the user via ads or coins.
    */
-  public isEpisodeUnlocked(dramaId: string, episodeNumber: number, freeToWatch?: boolean): boolean {
-    if (freeToWatch === true || episodeNumber <= 2) {
-      return true;
-    }
+  public isEpisodeUnlocked(dramaId: string, episodeNumber: number, _freeToWatch?: boolean): boolean {
     const unlocked = this.getUnlockedEpisodes();
     const dramaUnlocked = unlocked[dramaId];
     if (Array.isArray(dramaUnlocked) && dramaUnlocked.includes(episodeNumber)) {

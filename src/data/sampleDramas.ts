@@ -77,7 +77,7 @@ function generateEpisodesForDrama(
       thumbnailUrl: `${baseThumb}?auto=format&fit=crop&w=400&q=80&sig=${dramaId}-${i}`,
       videoSource: videoUrl,
       videoType: 'mp4',
-      freeToWatch: true,
+      freeToWatch: false,
       availableQualities: [
         { label: '1080p', resolution: '1080x1920', url: videoUrl },
         { label: '720p', resolution: '720x1280', url: videoUrl },

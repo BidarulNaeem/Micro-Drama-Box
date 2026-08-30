@@ -167,9 +167,6 @@ export const EpisodeDrawer: React.FC<EpisodeDrawerProps> = ({
                     key={ep.id}
                     id={`drawer-ep-btn-${ep.episodeNumber}`}
                     onClick={() => {
-                      if (!isUnlocked) {
-                        return;
-                      }
                       onSelectEpisode(ep.episodeNumber);
                       onClose();
                     }}
